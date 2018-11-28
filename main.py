@@ -70,7 +70,7 @@ class Cutter:
 
 
 if __name__ == '__main__':
-    path = "/home/artur/Desktop/Music/New/Power/Strident - A Pirate's Life For Me.mp3"
+    path = "SomeAudio.mp3"  # add external file to read
     loader = AudioLoader(path)
     audio = loader.get_audio()
     framer = FramingManager(audio)
