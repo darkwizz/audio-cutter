@@ -2,15 +2,24 @@ import os
 
 
 class AudioLoader:
-    def __init__(self, path):
+    def __init__(self, path='', bytes=[]):
+        if not bytes and not path:
+            raise ValueError('must be one of parameters')
         self.path = path
+        self.bytes = bytes
+
+    def __get_info_from_bytes(self, bytes):
+        return {}
 
     def get_audio(self):
+        if self.bytes:
+            info = self.__get_info_from_bytes(self.bytes)
+            return Audio(self.bytes, info)
         if not os.path.exists(self.path):
             raise ValueError('No audio with such path')
-        info = {}
         with open(self.path, 'rb') as audio_file:
             audio = audio_file.read()
+            info = self.__get_info_from_bytes(audio)
             return Audio(audio, info)
 
 
@@ -39,8 +48,11 @@ class Cursor:
     def get_current_frame(self):
         return self.frames[self.position]
 
+    def finished(self):
+        return self.position == self.audio.duration - 1
+
     def move_next(self):
-        if self.position == self.audio.duration - 1:
+        if self.finished():
             raise ValueError('Cannot move further')
         self.position += 1
 
@@ -69,8 +81,34 @@ class Cutter:
         return result
 
 
+class Player:
+    def __init__(self, cursor):
+        self.cursor = cursor
+        self.stopped = False
+
+    def play(self):
+        self.stopped = True
+        while not self.cursor.finished() and not self.stopped:
+            frame = self.cursor.get_current_frame()
+            # some playing operations
+            print('frame is being played')
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = False
+
+
+def get_audio_path_from_config():
+    config_path = 'mp3-path.conf'
+    if not os.path.exists(config_path):
+        return 'path-not-existing'
+
+    with open(config_path) as config_file:
+        for path in config_file:
+            yield path.strip()
+
 if __name__ == '__main__':
-    path = "SomeAudio.mp3"  # add external file to read
+    path = next(get_audio_path_from_config())  # add external file to read
     loader = AudioLoader(path)
     audio = loader.get_audio()
     framer = FramingManager(audio)
