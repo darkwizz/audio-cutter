@@ -41,8 +41,53 @@ def general_headers_valid(headers):
     valid_layer = headers['layer'] != 0b00000000
     return valid_layer and valid_version
 
-def audio_headers_valid(headers):
-    return True
+
+ALLOWED_BIT_RATES = {
+    0b11000000: [32, 48, 56, 64, 80, 96, 112, 128, 160, 192],
+    0b01000000: [64, 96, 112, 128, 160, 196, 224, 256, 320, 384],
+    0b10000000: [64, 96, 112, 128, 160, 196, 224, 256, 320, 384],
+    0b00000000: [64, 96, 112, 128, 160, 196, 224, 256, 320, 384]
+}
+
+
+def get_bitrate(general_headers, bitrate):
+    v1_l1_rates = [32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448]
+    v1_l2_rates = [32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384]
+    v1_l3_rates = [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320]
+    v2_l1_rates = [32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256]
+    v2_l2_l3_rates = [8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]
+    v1l1 = {(i + 1) << 4: val for i, val in enumerate(v1_l1_rates)}
+    v1l2 = {(i + 1) << 4: val for i, val in enumerate(v1_l2_rates)}
+    v1l3 = {(i + 1) << 4: val for i, val in enumerate(v1_l3_rates)}
+    v2l1 = {(i + 1) << 4: val for i, val in enumerate(v2_l1_rates)}
+    v2l2l3 = {(i + 1) << 4: val for i, val in enumerate(v2_l2_l3_rates)}
+    version = general_headers['version']
+    layer = general_headers['layer']
+    if version == 0b00011000:
+        if layer == 0b00000110:
+            return v1l1[bitrate]
+        elif layer == 0b00000100:
+            return v1l2[bitrate]
+        elif layer == 0b00000010:
+            return v1l3[bitrate]
+    elif version == 0b00010000:
+        if layer == 0b00000110:
+            return v2l1[bitrate]
+        elif layer != 0b00000000:
+            return v2l2l3[bitrate]
+    return 0
+
+
+def audio_headers_valid(headers, general_headers):
+    bit_rate_valid = headers['bitrate'] != BIT_RATE_MASK
+    sample_rate_valid = headers['sample'] != SAMPLE_RATE_MASK
+    layer_ii = 0b00000100
+    sample_mode_pair_valid = True
+    if general_headers['layer'] == layer_ii:
+        bit_rate = get_bitrate(general_headers, headers['bitrate'])
+        channel_mode = headers['ch_mode']
+        sample_mode_pair_valid = bit_rate in ALLOWED_BIT_RATES[channel_mode]
+    return bit_rate_valid and sample_rate_valid and sample_mode_pair_valid
 
 
 path = next(get_audio_path_from_config())
@@ -63,6 +108,7 @@ while i < len(file_bytes):
             rest_bytes = file_bytes[i:i+2]
             i += 2
             audio_headers_bits = get_audio_headers_bits(rest_bytes)
-            frame_header.extend([byte, second_byte, *rest_bytes])
-            print(frame_header)
+            if audio_headers_valid(audio_headers_bits, gen_headers_bits):
+                frame_header.extend([byte, second_byte, *rest_bytes])
+                print(frame_header)
     pass
