@@ -90,14 +90,32 @@ def audio_headers_valid(headers, general_headers):
     return bit_rate_valid and sample_rate_valid and sample_mode_pair_valid
 
 
+def divide_bits(dividend, divisor):
+    current_dividend = dividend
+    while len(current_dividend) >= len(divisor):
+        zeros_for_divisor_count = len(current_dividend) - len(divisor)
+        current_divisor = divisor + '0' * zeros_for_divisor_count
+        xor_res = int(current_dividend, 2) ^ int(current_divisor, 2)
+        current_dividend = bin(xor_res)
+    return int(current_dividend, 2)
+
+
+def get_crc(frame_header):
+    return 0
+
+
+def crc_passed(frame_header, crc_check):
+    header_crc = get_crc(frame_header)
+    return header_crc == crc_check
+
+
 path = next(get_audio_path_from_config())
 with open(path, 'rb') as mp3_file:
     mp3_size = os.path.getsize(path)
     file_bytes = mp3_file.read()
 
-i = 0
+i = len(file_bytes)  # = 0
 while i < len(file_bytes):
-    frame_header = []
     byte = file_bytes[i]
     i += 1
     if byte == 255:
@@ -109,6 +127,16 @@ while i < len(file_bytes):
             i += 2
             audio_headers_bits = get_audio_headers_bits(rest_bytes)
             if audio_headers_valid(audio_headers_bits, gen_headers_bits):
-                frame_header.extend([byte, second_byte, *rest_bytes])
+                frame_header = [byte, second_byte, *rest_bytes]
+                if gen_headers_bits['crc'] == 0:
+                    crc_check = file_bytes[i:i+2]
+                    i += 2
+                    if not crc_passed(frame_header, crc_check):
+                        continue
                 print(frame_header)
     pass
+
+left = '0b11010011101100000'
+right = '0b1011'
+res = divide_bits(left, right)
+assert res == 4
