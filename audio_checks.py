@@ -14,6 +14,15 @@ CP_MASK = 0b00001000
 MEDIA_ORIG_MASK = 0b00000100
 EMPH_MASK = 0b00000011
 
+VERSION_1 = 0b00011000
+VERSION_2 = 0b00010000
+LAYER_1 = 0b00000110
+LAYER_2 = 0b00000100
+LAYER_3 = 0b00000010
+
+ID3V1_SIZE = 128
+GENRES_LIST = ['nope', '', '', '', '', '', '', '', '', 'Metal']
+
 
 def get_general_headers_bits(header_byte):
     result = {}
@@ -91,7 +100,7 @@ def audio_headers_valid(headers, general_headers):
 
 
 def divide_bits(dividend, divisor):
-    current_dividend = dividend
+    current_dividend = bin(int(dividend, 2))
     while len(current_dividend) >= len(divisor):
         zeros_for_divisor_count = len(current_dividend) - len(divisor)
         current_divisor = divisor + '0' * zeros_for_divisor_count
@@ -100,13 +109,102 @@ def divide_bits(dividend, divisor):
     return int(current_dividend, 2)
 
 
-def get_crc(frame_header):
-    return 0
+def get_bytes_in_binary(byte_seq):
+    res = ''.join([format(byte, '#010b') for byte in byte_seq]).replace('0b', '')
+    return '0b' + res
 
 
-def crc_passed(frame_header, crc_check):
-    header_crc = get_crc(frame_header)
-    return header_crc == crc_check
+def get_layer3_for_crc_bits_count(general_headers, audio_headers):
+    if general_headers['version'] == VERSION_1:
+        bytes_count = 17 if audio_headers['ch_mode'] == 0b11000000 else 32
+    else:
+        bytes_count = 9 if audio_headers['ch_mode'] == 0b11000000 else 17
+    return bytes_count * 8
+
+
+def get_layer1_for_crc_bits_count(audio_headers):
+    subbands_numbers_table = {
+        0b00110000: 15,
+        0b00100000: 19,
+        0b00010000: 23,
+        0b00000000: 27
+    }
+    channels_num = 1 if audio_headers['ch_mode'] == 0b11000000 else 2
+    subbands_number = subbands_numbers_table[audio_headers['mode_ext']] if audio_headers['ch_mode'] == 0b01000000 else 32
+    return 4 * (channels_num * subbands_number + 32 - subbands_number)
+
+
+def get_extra_bits_for_crc(general_headers, audio_headers, current_offset, file_bytes):
+    if general_headers['layer'] == LAYER_3:
+        bits_count = get_layer3_for_crc_bits_count(general_headers, audio_headers)
+    elif general_headers['layer'] == LAYER_1:
+        bits_count = get_layer1_for_crc_bits_count(audio_headers)
+    else:
+        return None
+
+    bytes_count = int(bits_count / 8)
+    bytes_for_crc = [i for i in file_bytes[current_offset:current_offset + bytes_count]]
+    bits_for_crc = get_bytes_in_binary(bytes_for_crc)[2:]
+    count_rest = bits_count % 8
+    if count_rest != 0:
+        rest_byte = file_bytes[current_offset + bytes_count]
+        rest_mask = int('0b' + '1' * count_rest, 2) << (8 - count_rest)
+        rest = (rest_byte & rest_mask) >> (8 - count_rest)
+        bits_for_crc += (format(rest, '#06b')[2:])
+    return bits_for_crc
+
+
+def crc_passed(header_bits_seq, general_headers, audio_headers , crc_check, current_offset, file_bytes):
+    if type(crc_check) != type(''):
+        crc_check = get_bytes_in_binary(crc_check)[2:]
+    extra_bits = get_extra_bits_for_crc(general_headers, audio_headers, current_offset, file_bytes)
+    if extra_bits is None:
+        return True
+    checked_seq = header_bits_seq + extra_bits + crc_check
+    generating_polynom = bin(0x18005)
+    header_crc = divide_bits(checked_seq, generating_polynom)
+    return header_crc == 0
+
+
+def split_audio_file(audio_file_bytes):
+    """
+    splits mp3 file into id3v1, id3v2 and audio stream itself
+
+    :param audio_file_bytes: bytes from .mp3 file
+    :return: part with id3v1 tags (without TAG part), id3v2 tags, mp3 bytes themselves
+    """
+    if audio_file_bytes[-ID3V1_SIZE:-ID3V1_SIZE + 3] == b'TAG':
+        id3v1 = audio_file_bytes[-ID3V1_SIZE + 3:]
+        audio = audio_file_bytes[:-ID3V1_SIZE]
+    else:
+        id3v1 = b''
+        audio = audio_file_bytes
+    id3v2 = b''
+    return id3v1, id3v2, audio
+
+
+def get_tag_valuable_part(tag_bytes):
+    zero_byte_pos = tag_bytes.find(b'\x00')
+    return tag_bytes[:zero_byte_pos] if zero_byte_pos >= 0 else tag_bytes
+
+
+def get_id3v1_headers(id3v1):
+    title = get_tag_valuable_part(id3v1[:30])
+    artist = get_tag_valuable_part(id3v1[30:60])
+    album = get_tag_valuable_part(id3v1[60:90])
+    year = get_tag_valuable_part(id3v1[90:94])
+    comment = get_tag_valuable_part(id3v1[94:122])
+    track_position = id3v1[123]
+    genre = id3v1[124]
+    return {
+        'title': title.decode('ascii'),
+        'artist': artist.decode('ascii'),
+        'album': album.decode('ascii'),
+        'year': year.decode('ascii'),
+        'comment': comment.decode('ascii'),
+        'track_position': str(track_position),
+        'genre': GENRES_LIST[genre]
+    }
 
 
 path = next(get_audio_path_from_config())
@@ -114,8 +212,12 @@ with open(path, 'rb') as mp3_file:
     mp3_size = os.path.getsize(path)
     file_bytes = mp3_file.read()
 
-i = len(file_bytes)  # = 0
-while i < len(file_bytes):
+id3v1, id3v2, audio = split_audio_file(file_bytes)
+id3v1_tags = get_id3v1_headers(id3v1)
+
+i = 0
+# i = len(file_bytes)
+while i < len(audio):
     byte = file_bytes[i]
     i += 1
     if byte == 255:
@@ -131,12 +233,21 @@ while i < len(file_bytes):
                 if gen_headers_bits['crc'] == 0:
                     crc_check = file_bytes[i:i+2]
                     i += 2
-                    if not crc_passed(frame_header, crc_check):
+                    header_seq = get_bytes_in_binary(rest_bytes)
+                    if not crc_passed(header_seq, gen_headers_bits, audio_headers_bits, crc_check, i, file_bytes):
                         continue
+                # find frame length
                 print(frame_header)
     pass
 
-left = '0b11010011101100000'
+left = '0b011010011101100000'
 right = '0b1011'
 res = divide_bits(left, right)
 assert res == 4
+poly = bin(0x18005)
+seq = '0b0110010001000100010100111010110101111011111111111111111111111110011100000010001010001111101001101110000111101001011001100110010101101010011011110011111111111111111111001110111100111010011001101101111001000000011001110010000001100111001011100110011011110011000101000110'
+res = divide_bits(seq, poly)
+print(res)
+poly = bin(0x8005)
+res = divide_bits(seq, poly)
+print(res)
