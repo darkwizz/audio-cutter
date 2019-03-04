@@ -1,6 +1,10 @@
+import datetime
+import json
+
 import pydub
 
-from base import Cursor
+from base import Cursor, AudioLoader
+from utils import get_audio_path_from_config
 
 
 class LibFramingManager:
@@ -42,3 +46,18 @@ class LibAudioCutResult:
 
     def save_cut_audio(self):
         self.cut_result.export(self.audio_metadata.path, format='mp3', bitrate='320k')
+
+
+if __name__ == '__main__':
+    path = next(get_audio_path_from_config())  # add external file to read
+    if not path:
+        print("No config file")
+        exit()
+    loader = AudioLoader(path)
+    audio_meta = loader.get_audio_metadata()
+    framer = LibFramingManager(audio_meta)
+    cursor = framer.get_cursor()
+    cutter = LibCutter(cursor)
+    result = cutter.get_cut_audio(start=198, end=330)
+    result.set_save_path('./Cut.mp3')
+    result.save_cut_audio()

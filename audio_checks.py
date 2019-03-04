@@ -1,4 +1,4 @@
-from main import get_audio_path_from_config
+from utils import get_audio_path_from_config
 import os
 
 SYNC_MASK = 0b11100000
@@ -21,6 +21,7 @@ LAYER_2 = 0b00000100
 LAYER_3 = 0b00000010
 
 ID3V1_SIZE = 128
+ID3V2_TAG_HEADER_SIZE = 10
 GENRES_LIST = ['nope', '', '', '', '', '', '', '', '', 'Metal']
 
 
@@ -155,6 +156,9 @@ def get_extra_bits_for_crc(general_headers, audio_headers, current_offset, file_
 
 
 def crc_passed(header_bits_seq, general_headers, audio_headers , crc_check, current_offset, file_bytes):
+    # this function does not work correctly, I didn't find yet a proper formula of how to form
+    # the checked sequence (division works well [there is an assert in the bottom,
+    # but the initial bit sequence is wrong)
     if type(crc_check) != type(''):
         crc_check = get_bytes_in_binary(crc_check)[2:]
     extra_bits = get_extra_bits_for_crc(general_headers, audio_headers, current_offset, file_bytes)
@@ -173,6 +177,8 @@ def split_audio_file(audio_file_bytes):
     :param audio_file_bytes: bytes from .mp3 file
     :return: part with id3v1 tags (without TAG part), id3v2 tags, mp3 bytes themselves
     """
+
+    # [no parser for ID3V2 yet]
     if audio_file_bytes[-ID3V1_SIZE:-ID3V1_SIZE + 3] == b'TAG':
         id3v1 = audio_file_bytes[-ID3V1_SIZE + 3:]
         audio = audio_file_bytes[:-ID3V1_SIZE]
@@ -180,6 +186,12 @@ def split_audio_file(audio_file_bytes):
         id3v1 = b''
         audio = audio_file_bytes
     id3v2 = b''
+    if audio_file_bytes[:3] == b'ID3':
+        tag_size_bytes = audio_file_bytes[6:10]
+        tag_size_bin = ''.join([format(byte, '#09b') for byte in tag_size_bytes]).replace('0b', '')
+        tag_size = int(tag_size_bin, 2) + ID3V2_TAG_HEADER_SIZE
+        id3v2 = audio_file_bytes[:tag_size]
+        audio = audio[tag_size:]
     return id3v1, id3v2, audio
 
 
@@ -207,47 +219,51 @@ def get_id3v1_headers(id3v1):
     }
 
 
-path = next(get_audio_path_from_config())
-with open(path, 'rb') as mp3_file:
-    mp3_size = os.path.getsize(path)
-    file_bytes = mp3_file.read()
+if __name__ == "__main__":
+    path = next(get_audio_path_from_config())
+    if not path or not os.path.exists(path):
+        print("No config or no such file")
+        exit()
 
-id3v1, id3v2, audio = split_audio_file(file_bytes)
-id3v1_tags = get_id3v1_headers(id3v1)
+    with open(path, 'rb') as mp3_file:
+        mp3_size = os.path.getsize(path)
+        file_bytes = mp3_file.read()
 
-i = 0
-# i = len(file_bytes)
-while i < len(audio):
-    byte = file_bytes[i]
-    i += 1
-    if byte == 255:
-        second_byte = file_bytes[i]
+    id3v1, id3v2, audio = split_audio_file(file_bytes)
+    id3v1_tags = get_id3v1_headers(id3v1)
+
+    i = 0
+    # i = len(file_bytes)
+    while i < len(audio):
+        byte = audio[i]
         i += 1
-        gen_headers_bits = get_general_headers_bits(second_byte)
-        if second_byte & SYNC_MASK == SYNC_MASK and general_headers_valid(gen_headers_bits):
-            rest_bytes = file_bytes[i:i+2]
-            i += 2
-            audio_headers_bits = get_audio_headers_bits(rest_bytes)
-            if audio_headers_valid(audio_headers_bits, gen_headers_bits):
-                frame_header = [byte, second_byte, *rest_bytes]
-                if gen_headers_bits['crc'] == 0:
-                    crc_check = file_bytes[i:i+2]
-                    i += 2
-                    header_seq = get_bytes_in_binary(rest_bytes)
-                    if not crc_passed(header_seq, gen_headers_bits, audio_headers_bits, crc_check, i, file_bytes):
-                        continue
-                # find frame length
-                print(frame_header)
-    pass
+        if byte == 255:
+            second_byte = audio[i]
+            i += 1
+            gen_headers_bits = get_general_headers_bits(second_byte)
+            if second_byte & SYNC_MASK == SYNC_MASK and general_headers_valid(gen_headers_bits):
+                rest_bytes = audio[i:i+2]
+                i += 2
+                audio_headers_bits = get_audio_headers_bits(rest_bytes)
+                if audio_headers_valid(audio_headers_bits, gen_headers_bits):
+                    frame_header = [byte, second_byte, *rest_bytes]
+                    if gen_headers_bits['crc'] == 0:
+                        crc_check = audio[i:i+2]
+                        i += 2
+                        header_seq = get_bytes_in_binary(rest_bytes)
+                        if not crc_passed(header_seq, gen_headers_bits, audio_headers_bits, crc_check, i, audio):
+                            continue
+                    # find frame length
+                    print(frame_header)
 
-left = '0b011010011101100000'
-right = '0b1011'
-res = divide_bits(left, right)
-assert res == 4
-poly = bin(0x18005)
-seq = '0b0110010001000100010100111010110101111011111111111111111111111110011100000010001010001111101001101110000111101001011001100110010101101010011011110011111111111111111111001110111100111010011001101101111001000000011001110010000001100111001011100110011011110011000101000110'
-res = divide_bits(seq, poly)
-print(res)
-poly = bin(0x8005)
-res = divide_bits(seq, poly)
-print(res)
+    left = '0b011010011101100000'
+    right = '0b1011'
+    res = divide_bits(left, right)
+    assert res == 4
+    poly = bin(0x18005)
+    seq = '0b0110010001000100010100111010110101111011111111111111111111111110011100000010001010001111101001101110000111101001011001100110010101101010011011110011111111111111111111001110111100111010011001101101111001000000011001110010000001100111001011100110011011110011000101000110'
+    res = divide_bits(seq, poly)
+    print(res)
+    poly = bin(0x8005)
+    res = divide_bits(seq, poly)
+    print(res)

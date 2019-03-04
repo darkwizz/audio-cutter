@@ -1,42 +1,31 @@
-import os
+# UI will be here - pass the .json config file + listen to audio + something else
+import datetime
+import json
 
-from base import AudioLoader
-from lib_cutter import LibFramingManager, LibCutter
+import pydub
 
-
-class Player:
-    def __init__(self, cursor):
-        self.cursor = cursor
-        self.stopped = False
-
-    def play(self):
-        self.stopped = True
-        while not self.cursor.finished() and not self.stopped:
-            frame = self.cursor.get_current_frame()
-            # some playing operations
-            print('frame is being played')
-        self.stopped = False
-
-    def stop(self):
-        self.stopped = False
-
-
-def get_audio_path_from_config():
-    config_path = 'mp3-path.conf'
-    if not os.path.exists(config_path):
-        return 'path-not-existing'
-
-    with open(config_path) as config_file:
-        for path in config_file:
-            yield path.strip()
+from utils import get_timedelta_from_datetime
 
 if __name__ == '__main__':
-    path = next(get_audio_path_from_config())  # add external file to read
-    loader = AudioLoader(path)
-    audio_meta = loader.get_audio_metadata()
-    framer = LibFramingManager(audio_meta)
-    cursor = framer.get_cursor()
-    cutter = LibCutter(cursor)
-    result = cutter.get_cut_audio(start=198, end=330)
-    result.set_save_path('./Cut.mp3')
-    result.save_cut_audio()
+    with open('cut_config.json') as config:
+        songs_config = json.load(config)
+    for song_config in songs_config:
+        if song_config['codec'] is not None:
+            segment = pydub.AudioSegment.from_file(song_config['path'], codec=song_config['codec'])
+        else:
+            segment = pydub.AudioSegment.from_mp3(song_config['path'])
+        for track in song_config['tracks']:
+            start, end, name = tuple(track.split('|'))
+            start_time = datetime.datetime.strptime(start, '%H:%M:%S')
+            end_time = datetime.datetime.strptime(end, '%H:%M:%S')
+            start_seconds = get_timedelta_from_datetime(start_time).total_seconds()
+            end_seconds = get_timedelta_from_datetime(end_time).total_seconds()
+            tags = song_config['tags']
+            tags['title'] = name
+            save_path = tags['artist'] + ' - ' + name + '.mp3'
+            song = segment[start_seconds * 1000: end_seconds * 1000]
+            loud = song_config['loud']
+            song = song + loud
+            song.export(save_path, format='mp3', bitrate='320k', tags=tags)
+            print(name)
+    # print(segment)
