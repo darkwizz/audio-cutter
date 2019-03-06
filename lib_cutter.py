@@ -3,7 +3,7 @@ import json
 
 import pydub
 
-from base import Cursor, AudioLoader
+from base import Cursor, AudioLoader, AUDIO_START
 from utils import get_audio_path_from_config
 
 
@@ -32,20 +32,33 @@ class LibCutter:
         for _ in range(end - start):
             cut_part_list.append(self.cursor.get_current_frame())
             self.cursor.move_next()
-        cut_part = sum(cut_part_list)
-        return LibAudioCutResult(cut_part, self.cursor.audio_metadata)
+        cut_cursor = Cursor(self.cursor.audio_metadata, cut_part_list)
+        return cut_cursor
 
 
-class LibAudioCutResult:
-    def __init__(self, cut_result, audio_metadata):
-        self.cut_result = cut_result
+class LibAudioVolumeSetter:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def get_volumed_audio(self, volume):
+        self.cursor.set_position(AUDIO_START)
+        volumed_frames = [frame + volume for frame in self.cursor]
+        return Cursor(self.cursor.audio_metadata, volumed_frames)
+
+
+class LibAudioSaver:
+    def __init__(self, cursor, audio_metadata):
+        self.cursor = cursor
         self.audio_metadata = audio_metadata
 
     def set_save_path(self, path):
         self.audio_metadata.path = path
 
+    # def set_tags(self, **tags):
+
     def save_cut_audio(self):
-        self.cut_result.export(self.audio_metadata.path, format='mp3', bitrate='320k')
+        audio_to_save = sum(self.cursor.frames)
+        audio_to_save.export(self.audio_metadata.path, format='mp3', bitrate='320k')
 
 
 if __name__ == '__main__':
@@ -58,6 +71,9 @@ if __name__ == '__main__':
     framer = LibFramingManager(audio_meta)
     cursor = framer.get_cursor()
     cutter = LibCutter(cursor)
-    result = cutter.get_cut_audio(start=198, end=330)
-    result.set_save_path('./Cut.mp3')
-    result.save_cut_audio()
+    cut_audio_cursor = cutter.get_cut_audio(start=198, end=330)
+    volumer = LibAudioVolumeSetter(cut_audio_cursor)
+    volumed_audio = volumer.get_volumed_audio(8)
+    saver = LibAudioSaver(volumed_audio, volumed_audio.audio_metadata)
+    saver.set_save_path('./Cut.mp3')
+    saver.save_cut_audio()

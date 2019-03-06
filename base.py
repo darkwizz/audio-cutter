@@ -2,6 +2,9 @@ import os
 
 from utils import ID3V1_BLOCK_SIZE, get_id3v1_headers, get_id3v2_headers
 
+AUDIO_START = 0
+AUDIO_END = -1
+
 
 class ID3V1_TAG:
     def __init__(self):
@@ -74,6 +77,18 @@ class Cursor:
             self.position = position
         else:
             raise ValueError('Out of audio bounds')
+
+    def __iter__(self):
+        self.set_position(AUDIO_START)
+        return self
+
+    def __next__(self):
+        if self.finished():
+            raise StopIteration
+        else:
+            current = self.get_current_frame()
+            self.move_next()
+            return current
 
 
 class Player:
