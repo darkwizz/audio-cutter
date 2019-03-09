@@ -58,7 +58,7 @@ class LibAudioSaver:
     def set_tags(self, **tags):
         self.tags = tags
 
-    def save_cut_audio(self):
+    def save_audio(self):
         audio_to_save = sum(self.cursor.frames)
         audio_to_save.export(self.path, format='mp3', bitrate='320k', tags=self.tags)
 
@@ -78,4 +78,4 @@ if __name__ == '__main__':
     volumed_audio = volumer.get_volumed_audio(8)
     saver = LibAudioSaver(volumed_audio, volumed_audio.audio_metadata)
     saver.set_save_path('./Cut.mp3')
-    saver.save_cut_audio()
+    saver.save_audio()
