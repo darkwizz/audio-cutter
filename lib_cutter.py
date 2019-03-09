@@ -1,6 +1,3 @@
-import datetime
-import json
-
 import pydub
 
 from base import Cursor, AudioLoader, AUDIO_START
@@ -13,7 +10,10 @@ class LibFramingManager:
         self.frames = []
 
     def __init_frames(self):
-        mp3_seg = pydub.AudioSegment.from_mp3(self.audio_metadata.path)
+        if self.audio_metadata.codec in ['mp3', None]:
+            mp3_seg = pydub.AudioSegment.from_mp3(self.audio_metadata.path)
+        else:
+            mp3_seg = pydub.AudioSegment.from_file(self.audio_metadata.path, codec=self.audio_metadata.codec)
         self.frames = [mp3_seg[i:i + 1000] for i in range(0, len(mp3_seg), 1000)]
 
     def get_cursor(self):
@@ -49,16 +49,18 @@ class LibAudioVolumeSetter:
 class LibAudioSaver:
     def __init__(self, cursor, audio_metadata):
         self.cursor = cursor
-        self.audio_metadata = audio_metadata
+        self.path = audio_metadata.path
+        self.tags = audio_metadata.tags
 
     def set_save_path(self, path):
-        self.audio_metadata.path = path
+        self.path = path
 
-    # def set_tags(self, **tags):
+    def set_tags(self, **tags):
+        self.tags = tags
 
     def save_cut_audio(self):
         audio_to_save = sum(self.cursor.frames)
-        audio_to_save.export(self.audio_metadata.path, format='mp3', bitrate='320k')
+        audio_to_save.export(self.path, format='mp3', bitrate='320k', tags=self.tags)
 
 
 if __name__ == '__main__':

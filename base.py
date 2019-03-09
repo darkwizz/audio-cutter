@@ -6,18 +6,12 @@ AUDIO_START = 0
 AUDIO_END = -1
 
 
-class ID3V1_TAG:
-    def __init__(self):
-        pass
-
+class ID3V1_TAG(dict):
     def to_bytes_tag(self):
         return b''
 
 
-class ID3V2_TAG:
-    def __init__(self):
-        pass
-
+class ID3V2_TAG(dict):
     def to_bytes_tag(self):
         return b''
 
@@ -44,10 +38,15 @@ class AudioLoader:
 
 
 class AudioMetadata:
-    def __init__(self, path, id3v1, id3v2):
+    def __init__(self, path, id3v1, id3v2, codec=None):
         self.path = path
         self.id3v1 = id3v1
         self.id3v2 = id3v2
+        self.codec = codec
+
+    @property
+    def tags(self):
+        return self.id3v2 or self.id3v1
 
 
 class Cursor:
