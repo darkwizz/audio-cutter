@@ -3,7 +3,6 @@ import datetime
 import json
 
 import os
-import pydub
 
 from base import AudioLoader
 from lib_cutter import LibCutter, LibAudioVolumeSetter, LibFramingManager, LibAudioSaver

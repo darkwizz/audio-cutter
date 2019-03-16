@@ -1,6 +1,6 @@
 import os
 
-from utils import ID3V1_BLOCK_SIZE, get_id3v1_headers, get_id3v2_headers
+from id3 import ID3V1_SIZE, get_id3v1_headers, get_id3v2_tag_header, ID3V2_TAG_HEADER_SIZE, ID3V2Parser
 
 AUDIO_START = 0
 AUDIO_END = -1
@@ -30,11 +30,21 @@ class AudioLoader:
 
     def __get_audio_id3(self):
         with open(self.path, 'rb') as mp3_file:
-            mp3_file.seek(-ID3V1_BLOCK_SIZE, os.SEEK_END)
+            mp3_file.seek(-ID3V1_SIZE, os.SEEK_END)
             id3v1 = None if mp3_file.read(3) != b'TAG' else get_id3v1_headers(mp3_file.read())
             mp3_file.seek(0, os.SEEK_SET)
-            id3v2 = None if mp3_file.read(3) != b'ID3' else get_id3v2_headers(mp3_file)
+            id3v2_header_block = mp3_file.read(ID3V2_TAG_HEADER_SIZE)
+            mp3_file.seek(0, os.SEEK_SET)
+            id3v2_headers = None if id3v2_header_block[:3] != b'ID3' else get_id3v2_tag_header(id3v2_header_block)
+            id3v2 = None
+            if id3v2_headers:
+                parser = ID3V2Parser(mp3_file.read(id3v2_headers['total_size']), id3v2_headers)
+                id3v2 = self.__get_audio_id3v2_info(parser.get_tag_frames())
             return id3v1, id3v2
+
+    @staticmethod
+    def __get_audio_id3v2_info(id3v2_frames):
+        return {}
 
 
 class AudioMetadata:

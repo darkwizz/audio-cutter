@@ -1,3 +1,4 @@
+from id3 import get_id3v1_headers, get_id3v2_tag_header
 from utils import get_audio_path_from_config
 import os
 
@@ -22,7 +23,11 @@ LAYER_3 = 0b00000010
 
 ID3V1_SIZE = 128
 ID3V2_TAG_HEADER_SIZE = 10
-GENRES_LIST = ['nope', '', '', '', '', '', '', '', '', 'Metal']
+ID3V2_TAG_FOOTER_SIZE = 10
+GENRES_LIST = {
+    9: 'Metal',
+    137: 'Heavy Metal'
+}
 
 
 def get_general_headers_bits(header_byte):
@@ -195,30 +200,6 @@ def split_audio_file(audio_file_bytes):
     return id3v1, id3v2, audio
 
 
-def get_tag_valuable_part(tag_bytes):
-    zero_byte_pos = tag_bytes.find(b'\x00')
-    return tag_bytes[:zero_byte_pos] if zero_byte_pos >= 0 else tag_bytes
-
-
-def get_id3v1_headers(id3v1):
-    title = get_tag_valuable_part(id3v1[:30])
-    artist = get_tag_valuable_part(id3v1[30:60])
-    album = get_tag_valuable_part(id3v1[60:90])
-    year = get_tag_valuable_part(id3v1[90:94])
-    comment = get_tag_valuable_part(id3v1[94:122])
-    track_position = id3v1[123]
-    genre = id3v1[124]
-    return {
-        'title': title.decode('ascii'),
-        'artist': artist.decode('ascii'),
-        'album': album.decode('ascii'),
-        'year': year.decode('ascii'),
-        'comment': comment.decode('ascii'),
-        'track_position': str(track_position),
-        'genre': GENRES_LIST[genre]
-    }
-
-
 if __name__ == "__main__":
     path = next(get_audio_path_from_config())
     if not path or not os.path.exists(path):
@@ -231,6 +212,9 @@ if __name__ == "__main__":
 
     id3v1, id3v2, audio = split_audio_file(file_bytes)
     id3v1_tags = get_id3v1_headers(id3v1)
+    id3v2_info = get_id3v2_tag_header(id3v2)
+
+    exit()
 
     i = 0
     # i = len(file_bytes)

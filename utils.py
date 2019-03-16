@@ -12,38 +12,28 @@ def get_audio_path_from_config():
             yield path.strip()
 
 
-ID3V1_BLOCK_SIZE = 128
-GENRES_LIST = [''] * 192
-GENRES_LIST[9] = 'Metal'
-GENRES_LIST[137] = 'Heavy Metal'
+def split_audio_file(audio_file_bytes):
+    """
+    splits mp3 file into id3v1, id3v2 and audio stream itself
 
+    :param audio_file_bytes: bytes from .mp3 file
+    :return: part with id3v1 tags (without TAG part), id3v2 tags, mp3 bytes themselves
+    """
+    from id3 import ID3V1_SIZE, get_id3v2_tag_header
 
-def get_tag_valuable_part(tag_bytes):
-    zero_byte_pos = tag_bytes.find(b'\x00')
-    return tag_bytes[:zero_byte_pos] if zero_byte_pos >= 0 else tag_bytes
-
-
-def get_id3v1_headers(id3v1):
-    title = get_tag_valuable_part(id3v1[:30])
-    artist = get_tag_valuable_part(id3v1[30:60])
-    album = get_tag_valuable_part(id3v1[60:90])
-    year = get_tag_valuable_part(id3v1[90:94])
-    comment = get_tag_valuable_part(id3v1[94:122])
-    track_position = id3v1[123]
-    genre = id3v1[124]
-    return {
-        'title': title.decode('ascii'),
-        'artist': artist.decode('ascii'),
-        'album': album.decode('ascii'),
-        'year': year.decode('ascii'),
-        'comment': comment.decode('ascii'),
-        'track_position': str(track_position),
-        'genre': GENRES_LIST[genre]
-    }
-
-
-def get_id3v2_headers(mp3_file):
-    return {}
+    if audio_file_bytes[-ID3V1_SIZE:-ID3V1_SIZE + 3] == b'TAG':
+        id3v1 = audio_file_bytes[-ID3V1_SIZE + 3:]
+        audio = audio_file_bytes[:-ID3V1_SIZE]
+    else:
+        id3v1 = b''
+        audio = audio_file_bytes
+    id3v2 = b''
+    if audio_file_bytes[:3] == b'ID3':
+        tag_header = get_id3v2_tag_header(audio_file_bytes)
+        tag_size = tag_header['total_size']
+        id3v2 = audio_file_bytes[:tag_size]
+        audio = audio[tag_size:]
+    return id3v1, id3v2, audio
 
 
 def get_timedelta_from_datetime(date_time):
