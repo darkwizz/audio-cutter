@@ -40,3 +40,8 @@ def get_timedelta_from_datetime(date_time):
     return datetime.timedelta(hours=date_time.hour,
                               minutes=date_time.minute,
                               seconds=date_time.second)
+
+
+def get_syncsafe_bytes_int_value(syncsafe_bytes):
+    bin_view = ''.join([format(byte, '#09b') for byte in syncsafe_bytes]).replace('0b', '')
+    return int(bin_view, 2)
