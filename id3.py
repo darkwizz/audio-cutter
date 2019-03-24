@@ -2,6 +2,15 @@ ID3V1_SIZE = 128
 
 ID3V2_TAG_HEADER_SIZE = 10
 ID3V2_TAG_FOOTER_SIZE = 10
+
+ID3V2_TAG_FRAME_HEADER_SIZE = 10
+ID3V2_TAG_FRAME_HEADER_ID_SIZE = 4
+ID3V2_TAG_FRAME_HEADER_LENGTH_SIZE = 4
+ID3V2_TAG_FRAME_HEADER_FLAGS_SIZE = 2
+ID3V2_TAG_FRAME_DECOMPRESSED_SIZE = 4
+ID3V2_TAG_FRAME_ENCRYPTION_SIZE = 1
+ID3V2_TAG_FRAME_GROUP_SIZE = 1
+
 ID3V2_TAG_EXT_HEADER_SIZE_FIELD_LENGTH = 4
 ID3V2_TAG_EXT_HEADER_FLAGS_FIELD_LENGTH = 2
 ID3V2_TAG_EXT_HEADER_PAD_SIZE_FIELD_LENGTH = 4
@@ -14,6 +23,22 @@ TAG_UNSYNC = 0b10000000
 TAG_EXT_HEADER = 0b01000000
 TAG_IS_DEV = 0b00100000
 TAG_HAS_FOOTER = 0b00010000
+
+ID3V23_FRAME_TAG_ALTER = 0b10000000
+ID3V23_FRAME_FILE_ALTER = 0b01000000
+ID3V23_FRAME_READ_ONLY = 0b00100000
+ID3V23_FRAME_COMPRESSION = 0b10000000
+ID3V23_FRAME_ENCRYPTION = 0b01000000
+ID3V23_FRAME_GROUP = 0b00100000
+
+ID3V24_FRAME_TAG_ALTER = 0b01000000
+ID3V24_FRAME_FILE_ALTER = 0b00100000
+ID3V24_FRAME_READ_ONLY = 0b00010000
+ID3V24_FRAME_GROUP = 0b01000000
+ID3V24_FRAME_COMPRESSION = 0b00001000
+ID3V24_FRAME_ENCRYPTION = 0b00000100
+ID3V24_FRAME_UNSYNCHRONISATION = 0b00000010
+ID3V24_FRAME_DATA_LENGTH_INDICATOR = 0b00000001
 
 TAG23_EXT_HEAD_CRC = 0b10000000
 
@@ -91,11 +116,78 @@ def get_id3v2_tag_header(id3v2):
     return tag_header
 
 
+def get_first_frame_position(tag_header, extended_tag_header={}):
+    result = ID3V2_TAG_HEADER_SIZE
+    if tag_header['flags']['ext_head'] and extended_tag_header:
+        result += extended_tag_header.get('block_size', 0)
+    return result
+
+
+def get_id3v23_frame_flags(frame_flags_bytes):
+    first_byte = frame_flags_bytes[0]
+    second_byte = frame_flags_bytes[1]
+    return {
+        'tag_alter': first_byte & ID3V23_FRAME_TAG_ALTER,
+        'file_alter': first_byte & ID3V23_FRAME_FILE_ALTER,
+        'read_only': first_byte & ID3V23_FRAME_READ_ONLY,
+        'compression': second_byte & ID3V23_FRAME_COMPRESSION,
+        'encryption': second_byte & ID3V23_FRAME_ENCRYPTION,
+        'group': second_byte & ID3V23_FRAME_GROUP
+    }
+
+
+def get_id3v24_frame_flags(frame_flags_bytes):
+    first_byte = frame_flags_bytes[0]
+    second_byte = frame_flags_bytes[1]
+    return {
+        'tag_alter': first_byte & ID3V24_FRAME_TAG_ALTER,
+        'file_alter': first_byte & ID3V24_FRAME_FILE_ALTER,
+        'read_only': first_byte & ID3V24_FRAME_READ_ONLY,
+        'group': second_byte & ID3V24_FRAME_GROUP,
+        'compression': second_byte & ID3V24_FRAME_COMPRESSION,
+        'encryption': second_byte & ID3V24_FRAME_ENCRYPTION,
+        'unsynchronisation': second_byte & ID3V24_FRAME_UNSYNCHRONISATION,
+        'data_indicator': second_byte & ID3V24_FRAME_DATA_LENGTH_INDICATOR,
+    }
+
+
+def get_parsed_id3v2_frame_header(frame_header_bytes, minor_version):
+    frame_id_bytes = frame_header_bytes[:ID3V2_TAG_FRAME_HEADER_ID_SIZE]
+    block_size_bytes_end = ID3V2_TAG_FRAME_HEADER_ID_SIZE + ID3V2_TAG_FRAME_HEADER_LENGTH_SIZE
+    block_size_bytes = frame_header_bytes[ID3V2_TAG_FRAME_HEADER_ID_SIZE:block_size_bytes_end]
+    frame_flags_bytes = frame_header_bytes[block_size_bytes_end:]
+    flags = get_id3v23_frame_flags(frame_flags_bytes) if minor_version == 3\
+        else get_id3v24_frame_flags(frame_flags_bytes)
+    extra_data_size = 0
+    if flags['compression']:
+        extra_data_size += ID3V2_TAG_FRAME_DECOMPRESSED_SIZE
+    if flags['encryption']:
+        extra_data_size += ID3V2_TAG_FRAME_ENCRYPTION_SIZE
+    if flags['group']:
+        extra_data_size += ID3V2_TAG_FRAME_GROUP_SIZE
+    # in the header this field is called 'frame_size'
+    frame_size = int(block_size_bytes.hex(), 16) if minor_version == 3\
+        else get_syncsafe_bytes_int_value(block_size_bytes)
+    return {
+        'frame_id': frame_id_bytes,
+        'block_size': frame_size + ID3V2_TAG_FRAME_HEADER_SIZE,
+        'frame_size': frame_size - extra_data_size,  # this is the actual frame data size
+        'extra_data_size': extra_data_size,
+        'flags': flags
+    }
+
+
 def get_id3v24_frames(tag_bytes, tag_header, extended_tag_header):
+    first_frame_position = get_first_frame_position(tag_header, extended_tag_header)
+    first_frame_header_bytes = tag_bytes[first_frame_position:first_frame_position + ID3V2_TAG_FRAME_HEADER_SIZE]
+    first_frame_header = get_parsed_id3v2_frame_header(first_frame_header_bytes, tag_header['version'][1])
     return []
 
 
 def get_id3v23_frames(tag_bytes, tag_header, extended_tag_header):
+    first_frame_position = get_first_frame_position(tag_header, extended_tag_header)
+    first_frame_header_bytes = tag_bytes[first_frame_position:first_frame_position + ID3V2_TAG_FRAME_HEADER_SIZE]
+    first_frame_header = get_parsed_id3v2_frame_header(first_frame_header_bytes, tag_header['version'][1])
     return []
 
 
@@ -213,4 +305,5 @@ if __name__ == '__main__':
     with open(path, 'rb') as mp3_file:
         parser = ID3V2Parser(mp3_file.read())
         ext_head = parser.get_extended_tag_header()
+        frames = parser.get_tag_frames()
     print(ext_head)
